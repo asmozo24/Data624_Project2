@@ -1,0 +1,491 @@
+---
+title: "Data624_Project2"
+author: "Alexis Mekueko"
+date: "12/3/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+```{r load-packages, results='hide',warning=FALSE, message=FALSE, echo=FALSE}
+
+##library(tidyverse) #loading all library needed for this assignment
+
+
+library(knitr)
+library(dplyr)
+library(tidyr)
+
+library(stats)
+library(statsr)
+library(GGally)
+library(pdftools)
+library(correlation)
+library(naniar)
+
+library(urca)
+library(tsibble)
+library(tseries)
+library(forecast)
+library(caret)
+set.seed(34332)
+library(plyr)
+library(arules)
+library(arulesViz)
+library(report)
+library(cluster) # to perform different types of hierarchical clustering
+# package functions used: daisy(), diana(), clusplot()
+#install.packages("visdat")
+library(visdat)
+
+```
+
+
+[Github Link](https://github.com/asmozo24/Data624_Project2)
+<br>
+[Web Link](https://rpubs.com/amekueko/847391)
+
+### Project #2 (Team) Assignment
+
+This is role playing.  I am your new boss.  I am in charge of production at ABC Beverage and you are a team of data scientists reporting to me.  My leadership has told me that new regulations are requiring us to understand our manufacturing process, the predictive factors and be able to report to them our predictive model of PH.
+
+Please use the historical data set I am providing.  Build and report the factors in both a technical and non-technical report.  I like to use Word and Excel.  Please provide your non-technical report in a  business friendly readable document and your predictions in an Excel readable format.   The technical report should show clearly the models you tested and how you selected your final approach.
+
+Please submit both Rpubs links and .rmd files or other readable formats for technical and non-technical reports.  Also submit the excel file showing the prediction of your models for pH.
+
+
+##  Data Structure
+
+```{r , echo=FALSE}
+
+#setwd("~/R/Data624_Project2")
+#getwd()
+
+# Loading data
+
+studentTrain <- read.csv("https://raw.githubusercontent.com/asmozo24/Data624_Project2/main/StudentData.csv", stringsAsFactors=FALSE)
+studentTest  <- read.csv("https://raw.githubusercontent.com/asmozo24/Data624_Project2/main/StudentEvaluation.csv", stringsAsFactors=FALSE)
+
+#df1 <- read.transactions('https://raw.githubusercontent.com/asmozo24/Data624_Market_Basket_Analysis/main/GroceryDataSet.csv', sep = ',', rm.duplicates = TRUE)
+
+#View(studentTrain)
+#glimpse(studentTrain)
+str(studentTrain)
+str(studentTest)
+studentTrain %>%
+  head(8)%>%
+  kable()
+summary(studentTrain)
+
+```
+
+We observed the dataset has 33 variables and 2571 observations. All the entire data is numerical except the variable Brand.Code and some random missing values. Amount all the manufacturing processes at ABC Beverage, there is response variable (PH) which we will find the predictive model.
+
+
+##  Data Preparation
+
+### Checking for Missing Values
+
+
+```{r , echo=FALSE}
+
+
+misValues <- sum(is.na(studentTrain))# Returning the column names with missing values
+misValues1 <- sum(is.na(studentTest))# Returning the column names with missing values
+
+#sum(is.na(basket1a$X.1))
+#misValues1 <- sum(is.na()
+cat("The dataset contains missing values for a total record of : " , misValues)
+cat("\nThe test dataset contains missing values for a total record of : " , misValues1)
+
+cat("\nThe percentage of the overall missing values in the dataframe is: ", round((sum(is.na(studentTrain))/prod(dim(studentTrain)))*100, 2))
+cat("%")
+```
+
+The actual dataset has missing values which represents about .85% of the total record. The first variable Brand.code has empty values, we will fill those with NA and evaluate again. Thus, we want to visualize these missing values to see how we can treat them. 
+
+```{r , echo=FALSE}
+
+# for visualizing missing values:
+#install.packages("VIM")              # Install VIM package
+library("VIM")                       # Load VIM
+aggr(studentTrain)
+
+# Filling the empty spece with "NA"
+studentTrain0 <- dplyr::na_if(studentTrain, "")
+#dim(basket1a)
+#if (is.na(studentTrain$Brand.Code) || studentTrain$Brand.Code == '')
+
+
+# All below code works fine
+
+#(colMeans(is.na(basket1a)))*100
+# apply(basket1a, 2, function(col)sum(is.na(col))/length(col))
+# 
+# basket1a %>%
+#   summarize_all(funs(sum(is.na(.)) / length(.)))
+# basket1a%>%
+#   summarise_all(list(name = ~sum(is.na(.))/length(.)))
+# sapply(basket1a, function(y) round((sum(length(which(is.na(y))))/nrow(basket1a))*100.00,2))
+# apply(is.na(basket1a), 2, sum)
+# column_na1 <- colnames(basket1a)[ apply(basket1a, 2, anyNA) ] # 2 is dimension(dim())
+
+
+
+missing.values <- function(df){
+    df %>%
+    gather(key = "variables", value = "val") %>%
+    mutate(is.missing = is.na(val)) %>%
+    group_by(variables, is.missing) %>%
+    dplyr::summarise(number.missing = n()) %>%
+    filter(is.missing==T) %>%
+    dplyr::select(-is.missing) %>%
+    arrange(desc(number.missing)) 
+}
+
+missing.values(studentTrain0)%>%
+  kable()
+
+# plot missing values
+ missing.values(studentTrain0) %>%
+   ggplot() +
+     geom_bar(aes(x=variables, y=number.missing), stat = 'identity', col='blue') +
+     labs(x='variables', y="number of missing values", title='Number of missing values per Variable') +
+   theme(axis.text.x = element_text(angle = 100, hjust = 0.2))
+ 
+# Let's see percentage of missing values per column in proportion to number total record (total rows)
+#vis_miss(studentTrain)
+gg_miss_var(studentTrain0, show_pct = TRUE) + labs(y = "Missing Values in % to total observations")+ theme()
+#colSums(is.na(df))%>% kable()
+#cat("\n The table below shows the total number of missing values per variable")
+
+#df1 <- drop_na(df)
+
+
+```
+
+After carefully inspected the data, we observed that the variable Brand.Code has 120 missing values. The variable Brand.Code is a categorical datatype and we have no clue how each character is attributed. Therefore, it makes sense to delete these observations as there are no pertinence and would be hard to impute.
+
+The response variable PH only have 4 missing values which represents (4/2571)*100 = 0.156% of the total observations. In addition, variable MFR appears to have the most missing values(212) or 8.24%. Therefore, it is safe to impute these missing values rather deleting them with potential to introduce biasing in the overall report. These missing values are not stack in a row neither in column which add more support toward imputation Vs. deletion. However, We attempt to delete any row where more than 50% of values are missing. This is to detect if the missing variables are at random or in a stack. Before we apply the imputation method, we would like to visualize the distribution of PH and MFR. 
+
+
+### Imputation Method
+```{r , echo=FALSE}
+
+studentTrain1 <- studentTrain0 %>% 
+              drop_na(Brand.Code)
+dim(studentTrain1)
+
+missing.values(studentTrain1)%>%
+  kable()
+
+histogram(studentTrain1$PH)
+histogram(studentTrain1$MFR)
+#densityplot(studentTrain$PH)
+
+```
+
+Let's impute and train the dataset.
+```{r , echo=FALSE}
+
+
+#https://www.r-bloggers.com/2021/06/remove-rows-that-contain-all-na-or-certain-columns-in-r/
+## Remove rows with more than 50% NA
+studentTrain2 <- studentTrain1[which(rowMeans(!is.na(studentTrain1)) > 0.5), ]
+#dim(studentTrain1)
+cat("We clearly see that there is no row ith more than 50% missing values")
+studentTrain3 <-studentTrain2 %>%
+                             dplyr::select(-1)
+#studentTrain1
+#studentTrain4 <- data.matrix(studentTrain3)
+# remove any row where all values are missing (all NA)
+#df1 <- studentTrain[apply(studentTrain, 1, function(y) !all(is.na(y))),]
+#dim(df1)
+#df1 <- studentTrain[rowSums(is.na(studentTrain)) != ncol(studentTrain), ]
+# https://www.r-bloggers.com/2016/04/missing-value-treatment/
+studentTrain_Pre <- preProcess(studentTrain3, method = c("center", "knnImpute", "scale", "corr", "nzv"))
+#sum(is.na(studentTrain2_Pre))
+
+pred <- predict(studentTrain_Pre, studentTrain3)
+#pred <- pred %>% select_at(vars(-one_of(nearZeroVar(., names = TRUE))))
+
+
+trainDf <- createDataPartition(pred$PH, p=0.8, time = 1, list = FALSE)
+trainX <-pred[trainDf, ]
+trainX <- trainX %>%
+                 dplyr::select(-PH)
+trainY <- pred$PH[trainDf]
+testX <- pred[-trainDf,]
+testX <- testX %>%
+                 dplyr::select(-PH)
+testY <- pred$PH[-trainDf]
+#postResample(pred = predict(plsTune, newdata=testX), obs = testY)
+
+
+```
+
+
+Now we have imputed and trained the data, let's visualize the data distribution and correlation.
+
+```{r fig.height=10, fig.width=10, , echo=FALSE}
+
+##### Graphic for missing and non-missing values #####
+ 
+#plot(density(studentTrain1$PH[!is.na(studentTrain1$PH)]), xlab = "PH", main = "Observed and Missing Values of PH")
+#points(density(studentTrain1$PH[is.na(studentTrain1$PH)]), type = "l", col = 2)
+#legend("topleft", c("Observed Values", "Missing Values"), lty = 1, col = 1:2)
+
+
+library(ggthemes)
+plot_H <-pred %>%
+  gather() %>%                             
+  ggplot(aes(value)) +                     
+    facet_wrap(~ key, scales = "free") +  
+    geom_histogram(bins = 25) +
+  theme_wsj()+ scale_colour_wsj("colors6")
+plot_H
+
+#cor1 <- cor(pred, method = "pearson", use = "complete.obs")
+#kable(cor1) 
+
+#ggcorr(pred, label = TRUE , label_alpha =TRUE )
+
+#boxplot.stats(pred$Air.Pressurer)$out
+# out <- boxplot.stats(pred$Air.Pressurer)$out
+# boxplot(pred$Air.Pressurer,
+#   ylab = "Air.Pressurer",
+#   main = "Boxplot of Air.Pressurer"
+# )
+# mtext(paste("Outliers: ", paste(out, collapse = ", ")))
+
+boxplot(pred)
+
+#library(outliers)
+#library(rstatix)
+#identify_outliers(pred, variable = "PH")
+
+```
+
+From data distribution, we see that the the response variable PH and PC.Volume, Carb.Temp, Carb.Pressure, Fill.Ounces, Carb.Temp have a nearly normal distribution. Air.Pressurer, Mnf.Flow, Oxygen.Filler seem to carry out some outliers. But at this time, we don't have much information about this ABC Beverage production, we cannot make up the reality of each data.
+
+
+## Modeling
+
+
+Random Forest model is taking forever to output the result. So, we decided to skip it and try other model. 
+<!-- Random Forest Model -->
+<!-- ```{r } -->
+
+<!-- randomForest_model <- train(x = trainX,  -->
+<!--                 y = trainY, -->
+<!--                 method = 'rf', -->
+<!--                 tuneLength = 10) -->
+<!-- randomForest_model -->
+<!-- plot(randomForest_model) -->
+
+<!-- ``` -->
+
+#### Partial Least Square
+
+```{r}
+
+plsTune_model <- train(trainX, trainY,
+
+ method = "pls",
+
+ ## The default tuning grid evaluates
+
+ ## components 1... tuneLength
+
+ tuneLength = 20,
+
+ trControl = trainControl(method = 'cv'),
+
+ preProc = c("center", "scale"))
+
+plsTune_model
+plot(plsTune_model)
+
+```
+
+
+#### Cubist Model
+```{r }
+cubist_model <- train(x = trainX,
+                y = trainY,
+                method = 'cubist')
+cubist_model
+
+```
+
+
+#### Boosted Trees Model
+```{r }
+gbmGrid <- expand.grid(.interaction.depth = seq(1, 7, by = 2),
+                       .n.trees = seq(100, 1000, by = 50),
+                       .shrinkage = c(0.01, 0.1, 0.5),
+                       .n.minobsinnode=c(5,10,15))
+
+set.seed(100)
+
+boostedTrees_model <- train(x = trainX,
+                y = trainY,
+                method = "gbm",
+                tuneGrid = gbmGrid,
+
+ ## The gbm() function produces copious amounts
+
+ ## of output, so pass in the verbose option
+
+ ## to avoid printing a lot to the screen.
+
+verbose = FALSE)
+
+boostedTrees_model 
+plot(boostedTrees_model)
+
+```
+
+
+
+#### K-nearest Neighbors Model 
+```{r , echo=FALSE}
+
+knn_model <- train(x = trainX,
+                  y = trainY,
+                  method = "knn",
+                  tuneLength = 10)
+knn_model
+plot(knn_model)
+
+```
+
+
+By curiosity, we want to check multilinear regression even we didn't use it during the semester
+```{r , echo=FALSE}
+linear_model <- train(x = trainX,
+                y = trainY,
+                method = 'lm',
+                trControl = trainControl(method = "cv") )
+linear_model
+#report(linear_model)
+#summary(linear_model)
+
+```
+
+## Model Selection
+
+Looking at the models to find which gives the optimal resampling and test set performance. 
+```{r }
+library(kableExtra)
+Partial_Least_Squares  <- postResample(pred = predict(plsTune_model, newdata=testX), obs = testY)
+Cubist <- postResample(pred = predict(cubist_model, newdata=testX), obs = testY)
+Boost_Trees <- postResample(pred = predict(boostedTrees_model, newdata=testX), obs = testY)
+MultiLinear <- postResample(pred = predict(linear_model, newdata=testX), obs = testY)
+KNN <- postResample(pred = predict(knn_model, newdata=testX), obs = testY)
+
+models_performance <- rbind( "Partial Least Squares Model" = Partial_Least_Squares, "Cubist Model" = Cubist, "Boost Trees" = Boost_Trees, "KNN Model"= KNN, "Multilinear Model" = MultiLinear
+  
+) 
+
+models_performance %>% 
+                  kable() %>%
+                          kable_material_dark() # kable_styling(bootstrap_options=c("hover", "striped", "condensed"))
+
+```
+
+The best model is Cubist Model based on the test set performance with the following results:
+RMSE         Rsquared      MAE
+0.5989889	   0.6265360     0.4305935
+
+### Importance of the predictors on the response variable, PH. 
+
+```{r , echo=FALSE}
+rfImpX <- varImp(cubist_model, conditional = FALSE)
+rfImpX
+
+```
+
+
+## Evaluation Data
+
+```{r , echo=FALSE}
+
+studentTest1 <- studentTest
+eval <- studentTest1 %>%
+        dplyr::select(-Brand.Code, -PH)
+eval1 <- scale(eval, scale = TRUE, center = TRUE)
+prediction_ph <- round(predict(cubist_model, eval), 2)
+Predicted_pH <- prediction_ph*attr(scale(studentTrain$PH, scale = TRUE, center = TRUE), 'scaled:scale')+attr(scale(studentTrain$PH, scale = TRUE, center = TRUE), 'scaled:center')
+  
+studentTest1$PH <- round(Predicted_pH,2) 
+ studentTest$PH <- round(Predicted_pH,2) 
+
+head(studentTest1$PH)
+```
+
+
+Let's compare the predicted pH and the trained pH
+
+```{r , echo=FALSE}
+#library(ggplot2)
+#library(dplyr)
+#library(hrbrthemes)
+library(viridis)
+library(plotly)
+library(reshape)
+#df <- rbind(studentTrain, studentTest )
+
+temp <- studentTrain[1:267, ]
+studentTest1$trained_pH <- temp$PH
+df1 <- studentTest1 %>%
+      dplyr::select(trained_pH,PH , Mnf.Flow)
+# rename(df1, predicted_PH = PH ) not working for some reason
+names(df1)[2] <- 'predicted_pH'
+
+df2 <- melt(df1, id = "Mnf.Flow")
+
+plot1 <- df2 %>% 
+  ggplot( aes(x=Mnf.Flow, y=value, fill=variable, color = variable, text=variable)) +
+    geom_line( ) +
+    #geom_smooth()+
+    #scale_fill_viridis(discrete = TRUE) +
+    theme(legend.position="bottom") +
+    #ggtitle("Death by Cause in Military from 1980-2010") +
+    theme_ipsum() +
+    theme(legend.position="right")+
+    labs(x='Mnf.Flow', y="pH Scale", title='Comparing the Predicted pH and the trained pH against one the most influential Predictors')
+
+
+# Turn it interactive
+plot2 <- ggplotly(plot1, tooltip="text")
+plot2
+
+write.csv(studentTest, "New_student_Evaluation.csv")
+#View(New_student_Evaluation)
+
+```
+
+## Report
+
+We given 02 dataset in the form of excel files. These datasets contain the actual data generated from ABC Beverage production and the evaluation data. Our was to use the actual data to predict the response variable 'PH'. This variable called PH is a measure of how acidic or basic a liquid is. Our study shows that the drink made by the ABC company is of type basic. After the prediction the pH remains basic. We observed that the component 'Mnf.Flow' appears to have the most influence on the pH. Therefore, for a negative value of 'Mnf.Flow' , the predicted is more basic than the actual/current pH and for positive value of 'Mnf.Flow', the predicted pH remain less basic than the actual pH. 
+
+#### Recommendation:
+
+Our study shows that the components below have greater influence on the pH of the drink being made. In other words, by controlling the variation of these components, the process engineers are likely to achieve a better pH. The attached excel file(New_Student_Evaluation) contains the predicted pH.
+
+Components       values
+
+Mnf.Flow	       100.00000			
+Density	         81.15942			
+Temperature	     75.36232			
+Carb.Rel	       75.36232			
+Air.Pressurer	   63.76812			
+Pressure.Vacuum	 61.59420	
+
